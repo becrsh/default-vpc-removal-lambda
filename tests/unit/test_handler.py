@@ -2,7 +2,7 @@ import json
 
 import pytest
 
-from hello_world import app
+from default_vpc_removal_lambda import app
 
 
 @pytest.fixture()
