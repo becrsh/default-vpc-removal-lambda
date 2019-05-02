@@ -11,80 +11,10 @@ logger.setLevel(logging.INFO)
 LOCAL_INVOKE = os.getenv("AWS_SAM_LOCAL")
 
 
-class DefaultVpc:
-    """
-    DefaultVpc Class
-    """
-    def __init__(self, vpc_id, region, session):
-        self.vpc_id = vpc_id
-        self.region = region
-        self._client = session.client('ec2', region)
-        self.cannot_delete = False
-        self.network_interfaces = []
-        self.security_groups = []
-        self.route_tables = []
-        self.nat_gateways = []
-        self.internet_gateway = None
-        self.network_acls = []
-        self.subnets = []
-
-        self.__vpcFilter = [{
-            'Name': 'vpc-id',
-            'Values': [self.vpc_id]
-        }]
-
-        self.get_network_interfaces()
-        self.get_security_groups()
-
-    def get_network_interfaces(self):
-        logger.debug("Getting Network Interfaces...")
-        result = []
-        paginator = self._client.get_paginator('describe_network_interfaces')
-        iterator = paginator.paginate(Filters=self.__vpcFilter)
-
-        for page in iterator:
-            for interface in page['NetworkInterfaces']:
-                if 'Attachment' in interface and (interface['Attachment']['Status'] == 'attached' or interface['Attachment']['status' == 'attaching']):
-                    self.cannot_delete = True
-                result.append(interface['NetworkInterfaceId'])
-
-        self.network_interfaces = result
-
-    def get_security_groups(self):
-        logger.debug("Getting Security Groups...")
-        result = []
-        paginator = self._client.get_paginator('describe_security_groups')
-        iterator = paginator.paginate(Filters=self.__vpcFilter)
-
-        for page in iterator:
-            for sg in page['SecurityGroups']:
-                result.append(sg['GroupId'])
-
-        self.security_groups = result
-
-    def describe(self):
-        return {
-            'vpc_id': self.vpc_id,
-            'region': self.region,
-            'network_interfaces': self.network_interfaces,
-            'security_groups': self.security_groups,
-            'network_acls': self.network_acls,
-            'route_tables': self.route_tables,
-            'nat_gateways': self.nat_gateways,
-            'subnets': self.subnets,
-            'internet_gateway': self.internet_gateway,
-            'cannot_delete': self.cannot_delete
-        }
-
-    def destroy(self):
-        pass
-
-
 def lambda_handler(event, context):
     dry_run = False
     if LOCAL_INVOKE == "true":
         logger.info("==== Local invocation detected! ====")
-        dry_run = True
 
     session = boto3.session.Session()
     account_vpcs = {}
@@ -95,7 +25,7 @@ def lambda_handler(event, context):
 
     logger.info(f"Default VPCS in every region {json.dumps(account_vpcs)}")
 
-    do_operations(session, account_vpcs, dry_run)
+    do_operations(session, account_vpcs)
 
     return {
         "message": "Function executed successfully!",
@@ -142,15 +72,80 @@ def find_default_vpc(session, region_name):
     return result
 
 
-def do_operations(session, vpc_dict, dry_run):
+def do_operations(session, vpc_dict):
     for region,vpc_ids in vpc_dict.items():
+        client = session.client('ec2', region)
+        ec2 = session.resource('ec2', region)
         for vpc_id in vpc_ids:
-            vpc = DefaultVpc(
-                session=session,
-                vpc_id=vpc_id,
-                region=region
-            )
-            if dry_run:
-                logger.info(json.dumps(vpc.describe(), indent=2))
-            else:
-                vpc.destroy()
+            vpc = ec2.Vpc(vpc_id)
+            delete_nat_gws(client, vpc_id)
+            delete_network_interfaces(vpc.network_interfaces.all())
+            delete_vpc_peering_connections(vpc.accepted_vpc_peering_connections.all())
+            delete_vpc_peering_connections(vpc.requested_vpc_peering_connections.all())
+            delete_network_acls(vpc.network_acls.all())
+            delete_route_tables(vpc.route_tables.all())
+            delete_subnets(vpc.subnets.all())
+            detach_and_delete_internet_gateway(vpc.internet_gateways.all())
+            logger.info(f"Delete VPC: {vpc.id}")
+            if LOCAL_INVOKE != "true":
+                vpc.delete()
+
+
+def delete_nat_gws(client,vpc_id):
+    response = client.describe_nat_gateways(
+        Filters=[
+            {
+                'Name': 'vpc-id',
+                'Values': [
+                    vpc_id,
+                ]
+            },
+        ],
+    )
+    for nat_gateway in response['NatGateways']:
+        logger.info(f"Deleting NAT GW: {nat_gateway['NatGatewayId']}")
+        if LOCAL_INVOKE != "true":
+            client.delete_nat_gateway(NatGatewayId=nat_gateway['NatGatewayId'])
+
+
+def delete_vpc_peering_connections(peering_connections):
+    for peering in peering_connections:
+        logger.info(f"Deleting VPC Peering Connections: {peering.id}")
+        if LOCAL_INVOKE != "true":
+            peering.delete()
+
+
+def delete_network_interfaces(network_interfaces):
+    for network_interface in network_interfaces:
+        logger.info(f"Deleting Network Interfaces: {network_interface.network_interface_id}")
+        if LOCAL_INVOKE != "true":
+            network_interface.delete()
+
+
+def delete_network_acls(network_acls):
+    for acl in network_acls:
+        logger.info(f"Deleting Network ACL: {acl.id}")
+        if LOCAL_INVOKE != "true":
+            acl.delete()
+
+
+def delete_route_tables(route_tables):
+    for rt in route_tables:
+        logger.info(f"Deleting Route Table: {rt.id}")
+        if LOCAL_INVOKE != "true":
+            rt.delete()
+
+
+def delete_subnets(subnets):
+    for subnet in subnets:
+        logger.info(f"Delete Subnet: {subnet.id}")
+        if LOCAL_INVOKE != "true":
+            subnet.delete()
+
+
+def detach_and_delete_internet_gateway(gws):
+    for gw in gws:
+        logger.info(f"Detach and Delete: {gw.id}")
+        if LOCAL_INVOKE != "true":
+            gw.detach_from_vpc()
+            gw.delete()
