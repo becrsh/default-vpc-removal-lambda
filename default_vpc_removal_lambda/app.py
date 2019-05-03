@@ -24,7 +24,6 @@ def lambda_handler(event, context):
         account_vpcs[region] = find_default_vpc(session, region)
 
     logger.info(f"Default VPCS in every region {json.dumps(account_vpcs)}")
-
     do_operations(session, account_vpcs)
 
     return {
@@ -83,8 +82,8 @@ def do_operations(session, vpc_dict):
             delete_vpc_peering_connections(vpc.accepted_vpc_peering_connections.all())
             delete_vpc_peering_connections(vpc.requested_vpc_peering_connections.all())
             delete_network_acls(vpc.network_acls.all())
-            delete_route_tables(vpc.route_tables.all())
             delete_subnets(vpc.subnets.all())
+            delete_route_tables(vpc.route_tables.all())
             detach_and_delete_internet_gateway(vpc.internet_gateways.all())
             logger.info(f"Delete VPC: {vpc.id}")
             if LOCAL_INVOKE != "true":
@@ -125,14 +124,19 @@ def delete_network_interfaces(network_interfaces):
 def delete_network_acls(network_acls):
     for acl in network_acls:
         logger.info(f"Deleting Network ACL: {acl.id}")
-        if LOCAL_INVOKE != "true":
+        if LOCAL_INVOKE != "true" and acl.is_default is not True:
             acl.delete()
 
 
 def delete_route_tables(route_tables):
     for rt in route_tables:
+        is_main = False
         logger.info(f"Deleting Route Table: {rt.id}")
-        if LOCAL_INVOKE != "true":
+        for association in rt.associations:
+            if association.main is True:
+                is_main = True
+
+        if LOCAL_INVOKE != "true" and is_main is not True:
             rt.delete()
 
 
