@@ -72,13 +72,15 @@ def find_default_vpc(session, region_name):
 
 
 def do_operations(session, vpc_dict):
-    for region,vpc_ids in vpc_dict.items():
+    for region, vpc_ids in vpc_dict.items():
         client = session.client('ec2', region)
         ec2 = session.resource('ec2', region)
         for vpc_id in vpc_ids:
+            logger.info(f"Remove VPC {vpc_id} in {region}")
             vpc = ec2.Vpc(vpc_id)
             delete_nat_gws(client, vpc_id)
             delete_network_interfaces(vpc.network_interfaces.all())
+            delete_security_groups(vpc.security_groups.all())
             delete_vpc_peering_connections(vpc.accepted_vpc_peering_connections.all())
             delete_vpc_peering_connections(vpc.requested_vpc_peering_connections.all())
             delete_network_acls(vpc.network_acls.all())
@@ -140,6 +142,13 @@ def delete_route_tables(route_tables):
             rt.delete()
 
 
+def delete_security_groups(security_groups):
+    for sg in security_groups:
+        logger.info(f"Delete Security Group: {sg.id}")
+        if LOCAL_INVOKE != "true" and sg.group_name != "default":
+            sg.delete()
+
+
 def delete_subnets(subnets):
     for subnet in subnets:
         logger.info(f"Delete Subnet: {subnet.id}")
@@ -150,6 +159,10 @@ def delete_subnets(subnets):
 def detach_and_delete_internet_gateway(gws):
     for gw in gws:
         logger.info(f"Detach and Delete: {gw.id}")
+        logger.info(f"{gw.attachments}")
+        for attachment in gw.attachments:
+            logger.info(f"Detatch from Vpc: {attachment['VpcId']}")
+            if LOCAL_INVOKE != "true":
+                gw.detach_from_vpc(VpcId=attachment['VpcId'])
         if LOCAL_INVOKE != "true":
-            gw.detach_from_vpc()
             gw.delete()
