@@ -19,13 +19,6 @@ Resources:
       Runtime: python3.7
       Policies:
         - Statement:
-            - Sid: CreateLogs
-              Effect: Allow
-              Action:
-                - logs:CreateLogGroup
-                - logs:CreateLogStream
-                - logs:PutLogEvents
-              Resource: '*'
             - Sid: AllowVPCActions
               Effect: Allow
               Action:
