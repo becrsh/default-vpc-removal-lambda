@@ -115,7 +115,7 @@ for the lambda:
                 "ec2:DescribeClientVpnAuthorizationRules",
                 "ec2:DescribePublicIpv4Pools",
                 "ec2:DeleteSecurityGroup",
-                "ec2:DescribeStaleSecurityGroup",
+                "ec2:DescribeStaleSecurityGroups",
                 "ec2:DescribeInternetGateways"
             ],
             "Resource": "*",
