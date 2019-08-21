@@ -18,9 +18,15 @@ def lambda_handler(event, context):
 
     session = boto3.session.Session()
     account_vpcs = {}
+    
+    regions = os.getenv("REGIONS")
+    if regions:
+        regions = regions.split(",")
+    else:
+        regions = get_regions(session)
 
-    # Do this for every region
-    for region in get_regions(session):
+    # Do this for either the specified regions or every region
+    for region in regions:
         account_vpcs[region] = find_default_vpc(session, region)
 
     logger.info(f"Default VPCS in every region {json.dumps(account_vpcs)}")
